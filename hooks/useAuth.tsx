@@ -54,27 +54,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const targetRole = shouldBeAdmin ? 'ADMIN' : 'FINANCEIRO';
 
       if (profileData) {
-        // Se já existe mas o cargo está errado para um admin, atualiza
         if (shouldBeAdmin && profileData.role !== 'ADMIN') {
           await supabase
             .from('user_profiles')
             .update({ role: 'ADMIN' })
             .eq('uid', u.id);
           
-          setProfile({
-            ...profileData,
-            role: 'ADMIN'
-          });
+          setProfile(prev => prev?.role === 'ADMIN' ? prev : { ...profileData, role: 'ADMIN' });
         } else {
-          setProfile({
-            uid: profileData.uid,
-            email: profileData.email,
-            name: profileData.name,
-            role: profileData.role
+          setProfile(prev => {
+            if (prev?.uid === profileData.uid && prev?.role === profileData.role) return prev;
+            return {
+              uid: profileData.uid,
+              email: profileData.email,
+              name: profileData.name,
+              role: profileData.role
+            };
           });
         }
       } else {
-        // Se o perfil não existe, cria
         const newProfile: UserProfile = {
           uid: u.id,
           email: u.email.toLowerCase(),
@@ -87,29 +85,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const checkUser = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          const u = session.user;
-          setUser({ uid: u.id, email: u.email || '' });
-          await syncProfile(u);
-        }
-      } catch (e) {
-        console.error('Session restoration error:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session) {
         const u = session.user;
-        setUser({ uid: u.id, email: u.email || '' });
+        setUser(prev => prev?.uid === u.id ? prev : { uid: u.id, email: u.email || '' });
         await syncProfile(u);
-      } else {
+      } else if (event === 'SIGNED_OUT' || !session) {
         setUser(null);
         setProfile(null);
       }
@@ -121,7 +102,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const login = async (email: string, pass: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password: pass,
       });
@@ -132,25 +113,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         throw error;
       }
-
-      if (data.user) {
-        setUser({ uid: data.user.id, email: data.user.email || '' });
-        
-        const { data: profileData } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('uid', data.user.id)
-          .single();
-          
-        if (profileData) {
-          setProfile({
-            uid: profileData.uid,
-            email: profileData.email,
-            name: profileData.name,
-            role: profileData.role
-          });
-        }
-      }
     } catch (e: any) {
       throw e;
     }
@@ -158,43 +120,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const register = async (email: string, pass: string) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password: pass,
       });
 
       if (error) throw error;
-
-      if (data.user) {
-        const uid = data.user.id;
-        const emailLower = email.toLowerCase();
-        
-        // Verifica se já existe um perfil criado pelo admin para este email
-        const { data: existingProfile } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('email', emailLower)
-          .single();
-
-        const newUserProfile = {
-          uid: uid,
-          email: emailLower,
-          name: existingProfile?.name || email.split('@')[0],
-          role: existingProfile?.role || ((emailLower === 'ricardomelo@browne.com.br' || emailLower === 'ricardomelo@charquesuprema.com.br') ? 'ADMIN' : 'FINANCEIRO')
-        };
-
-        // Usa upsert para vincular o UID do Auth ao perfil (seja novo ou pré-criado)
-        const { error: profileError } = await supabase
-          .from('user_profiles')
-          .upsert([newUserProfile], { onConflict: 'email' });
-
-        if (profileError) {
-          console.error('Error syncing profile:', profileError);
-        }
-        
-        setUser({ uid, email: data.user.email || '' });
-        setProfile(newUserProfile as any);
-      }
+      // O perfil será sincronizado pelo onAuthStateChange após o signup/login automático
     } catch (e: any) {
       throw e;
     }
@@ -213,8 +145,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const logout = async () => {
     await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
   };
 
   return (

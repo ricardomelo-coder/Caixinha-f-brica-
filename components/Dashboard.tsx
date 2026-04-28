@@ -72,6 +72,10 @@ const INITIAL_TRANSACTIONS = [
   { id: '5', responsible: 'Neia', description: 'TST-0998872728', amount: 5000, type: 'ENTRADA', date: '15 ABR 2026', timestamp: '2026-04-15T06:00:00Z', status: 'COMPLETED' },
 ];
 
+declare global {
+  var __isFetchingInitialData: boolean;
+}
+
 export default function Dashboard() {
   const { user, profile, logout } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -316,7 +320,10 @@ export default function Dashboard() {
   };
 
   const fetchInitialData = React.useCallback(async (silent = false) => {
+    if (globalThis.__isFetchingInitialData) return;
+    
     try {
+      globalThis.__isFetchingInitialData = true;
       if (!silent) setLoading(true);
 
       // Fetch Configs
@@ -369,6 +376,7 @@ export default function Dashboard() {
       console.error('Error fetching data:', error);
       if (!silent) toast.error(`Erro ao carregar dados: ${error.message || 'Erro desconhecido'}`);
     } finally {
+      globalThis.__isFetchingInitialData = false;
       if (!silent) setLoading(false);
     }
   }, [profile?.role, profile?.uid]);
@@ -376,22 +384,29 @@ export default function Dashboard() {
   useEffect(() => {
     fetchInitialData();
 
+    let timeoutId: NodeJS.Timeout;
+    const debouncedFetch = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => fetchInitialData(true), 200);
+    };
+
     // Real-time subscription - Use silent updates for real-time to avoid freezing UI
     const channel = supabase
       .channel('schema-db-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'transactions' },
-        () => fetchInitialData(true)
+        debouncedFetch
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'app_configs' },
-        () => fetchInitialData(true)
+        debouncedFetch
       )
       .subscribe();
 
     return () => {
+      clearTimeout(timeoutId);
       supabase.removeChannel(channel);
     };
   }, [fetchInitialData]);
@@ -441,7 +456,7 @@ export default function Dashboard() {
         if (error) throw error;
         toast.success("Movimentação registrada com sucesso!");
       }
-      fetchInitialData();
+      // fetchInitialData() retirado pois o real-time já cuida disso
     } catch (error: any) {
       toast.error("Erro ao salvar no banco de dados.");
       console.error(error);
