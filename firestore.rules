@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: transactions
+    // Fields:
+    //   - date: timestamp (required)
+    //   - type: string (ENTRADA/SAIDA) (required)
+    //   - amount: number (required)
+    //   - responsible: string (required)
+    //   - description: string (required)
+    //   - status: string (required)
+    //   - receiptNumber: string
+    //   - observations: string
+    //   - attachments: list of strings
+    //
+    // Collection: settlements
+    // Fields:
+    //   - transactionId: string (required)
+    //   - amountSpent: number (required)
+    //   - amountReturned: number
+    //   - amountOwnFunds: number
+    //   - amountReimbursement: number
+    //   - date: timestamp
+    //   - status: string
+    //   - receipts: list of strings
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isFinanceiro() {
+      return isAuthenticated() && 
+        (getUserData().role == 'FINANCEIRO' || 
+         request.auth.token.email == "ricardomelo@browne.com.br");
+    }
+
+    function isGestor() {
+      return isAuthenticated() && (getUserData().role == 'GESTOR' || isFinanceiro());
+    }
+
+    function isValidTransaction(data) {
+      return data.type in ['ENTRADA', 'SAIDA'] &&
+             data.amount is number && data.amount >= 0 &&
+             data.responsible is string && data.responsible.size() > 0 &&
+             data.description is string && data.description.size() > 0 &&
+             data.status in ['COMPLETED', 'OPEN', 'AWAITING_SETTLEMENT', 'AWAITING_REIMBURSEMENT', 'CANCELLED'];
+    }
+
+    function isValidSettlement(data) {
+      return data.transactionId is string &&
+             data.amountSpent is number && data.amountSpent >= 0 &&
+             data.status in ['PENDING', 'FINALIZED'];
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated();
+      allow create: if isFinanceiro() && isValidTransaction(request.resource.data);
+      allow update: if isFinanceiro() && isValidTransaction(request.resource.data);
+      allow delete: if isFinanceiro();
+    }
+
+    match /settlements/{settlementId} {
+      allow read: if isAuthenticated();
+      allow create: if isFinanceiro() && isValidSettlement(request.resource.data);
+      allow update: if isFinanceiro() && isValidSettlement(request.resource.data);
+      allow delete: if isFinanceiro();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isFinanceiro() || (isAuthenticated() && request.auth.uid == userId && request.resource.data.role == resource.data.role);
+    }
+  }
+}

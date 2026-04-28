@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "transaction": {
+      "title": "Transaction",
+      "description": "A financial movement in the physical cash box.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["IN", "OUT"] },
+        "amount": { "type": "number" },
+        "responsible": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string", "enum": ["COMPLETED", "OPEN", "AWAITING_SETTLEMENT", "AWAITING_REIMBURSEMENT", "CANCELLED"] },
+        "receiptNumber": { "type": "string" },
+        "observations": { "type": "string" },
+        "attachments": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["date", "type", "amount", "responsible", "description", "status"]
+    },
+    "settlement": {
+      "title": "Settlement",
+      "description": "Accountability for an OUT transaction.",
+      "type": "object",
+      "properties": {
+        "transactionId": { "type": "string" },
+        "amountSpent": { "type": "number" },
+        "amountReturned": { "type": "number" },
+        "amountOwnFunds": { "type": "number" },
+        "amountReimbursement": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["PENDING", "FINALIZED"] },
+        "receipts": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["transactionId", "amountSpent", "status"]
+    },
+    "user": {
+      "title": "User",
+      "description": "System user with specific roles.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["FINANCEIRO", "GESTOR", "RESPONSAVEL"] }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/transactions": {
+      "schema": "transaction",
+      "description": "Main collection for all cash movements."
+    },
+    "/settlements": {
+      "schema": "settlement",
+      "description": "Collection for accountability processes."
+    },
+    "/users": {
+      "schema": "user",
+      "description": "User profiles and roles."
+    }
+  }
+}
