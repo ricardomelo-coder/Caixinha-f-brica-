@@ -322,6 +322,8 @@ export default function Dashboard() {
   const fetchInitialData = React.useCallback(async (silent = false) => {
     if (globalThis.__isFetchingInitialData) return;
     
+    // Usamos refs locais para controle de concorrência se necessário, 
+    // mas o globalThis já ajuda entre instâncias se houver hot-reload estranho
     try {
       globalThis.__isFetchingInitialData = true;
       if (!silent) setLoading(true);
@@ -353,17 +355,15 @@ export default function Dashboard() {
         setTransactions(mappedTxs);
       }
 
-      // Fetch Users - Admin list fetch might be restricted by RLS or we might want more data
-      // For now we use the client-side fetch, but we'll try to use the API if it's an admin
-      if (profile?.role === 'ADMIN' && profile?.uid) {
-        const response = await fetch(`/api/admin/users?adminUid=${profile.uid}`, {
+      // Fetch Users
+      if (profileRef.current?.role === 'ADMIN' && profileRef.current?.uid) {
+        const response = await fetch(`/api/admin/users?adminUid=${profileRef.current.uid}`, {
           cache: 'no-store'
         });
         if (response.ok) {
           const dbUsers = await response.json();
           setUsers(dbUsers);
         } else {
-          // Fallback to client-side if API fails
           const { data: dbUsers } = await supabase.from('user_profiles').select('*');
           if (dbUsers) setUsers(dbUsers);
         }
@@ -379,11 +379,18 @@ export default function Dashboard() {
       globalThis.__isFetchingInitialData = false;
       if (!silent) setLoading(false);
     }
-  }, [profile?.role, profile?.uid]);
+  }, []); // Dependências vazias para estabilizar. Usaremos o profile via Ref ou passaremos via argumento se necessário.
+
+  const profileRef = React.useRef(profile);
+  useEffect(() => {
+    profileRef.current = profile;
+    // Se o perfil acabou de carregar pela primeira vez, forçamos um fetch
+    if (profile?.uid && transactions.length === 0) {
+      fetchInitialData();
+    }
+  }, [profile, transactions.length, fetchInitialData]);
 
   useEffect(() => {
-    fetchInitialData();
-
     let timeoutId: NodeJS.Timeout;
     const debouncedFetch = () => {
       clearTimeout(timeoutId);
@@ -1012,9 +1019,9 @@ export default function Dashboard() {
                   </DialogHeader>
                   <div className="grid gap-6 py-4">
                     <div className="grid gap-2">
-                      <Label htmlFor="type" className="font-semibold">Tipo de Movimentação</Label>
-                      <Select value={newTx.type} onValueChange={(v) => v && setNewTx({...newTx, type: v})}>
-                        <SelectTrigger className="rounded-xl h-12">
+                      <Label htmlFor="tx-type" className="font-semibold">Tipo de Movimentação</Label>
+                      <Select value={newTx.type} onValueChange={(v) => v && setNewTx({...newTx, type: v as any})}>
+                        <SelectTrigger id="tx-type" className="rounded-xl h-12">
                           <SelectValue placeholder="Selecione o tipo" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1424,8 +1431,9 @@ export default function Dashboard() {
                         <div className="space-y-4">
                           <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-2">
-                              <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Início</Label>
+                              <Label htmlFor="date-start" className="text-xs font-bold text-gray-500 uppercase tracking-widest">Início</Label>
                               <Input 
+                                id="date-start"
                                 type="date" 
                                 className="rounded-xl text-xs" 
                                 value={startDate}
@@ -1433,8 +1441,9 @@ export default function Dashboard() {
                               />
                             </div>
                             <div className="space-y-2">
-                              <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Fim</Label>
+                              <Label htmlFor="date-end" className="text-xs font-bold text-gray-500 uppercase tracking-widest">Fim</Label>
                               <Input 
+                                id="date-end"
                                 type="date" 
                                 className="rounded-xl text-xs" 
                                 value={endDate}
@@ -1444,9 +1453,9 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Tipo</Label>
+                            <Label htmlFor="type-filter" className="text-xs font-bold text-gray-500 uppercase tracking-widest">Tipo</Label>
                             <Select value={filterType} onValueChange={setFilterType}>
-                              <SelectTrigger className="rounded-xl">
+                              <SelectTrigger id="type-filter" className="rounded-xl">
                                 <SelectValue placeholder="Todos os tipos" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1458,9 +1467,9 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Status</Label>
+                            <Label htmlFor="status-filter" className="text-xs font-bold text-gray-500 uppercase tracking-widest">Status</Label>
                             <Select value={filterStatus} onValueChange={setFilterStatus}>
-                              <SelectTrigger className="rounded-xl">
+                              <SelectTrigger id="status-filter" className="rounded-xl">
                                 <SelectValue placeholder="Todos os status" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1474,9 +1483,9 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Período</Label>
+                            <Label htmlFor="period-filter" className="text-xs font-bold text-gray-500 uppercase tracking-widest">Período</Label>
                             <Select value={filterPeriod} onValueChange={(v: any) => setFilterPeriod(v)}>
-                              <SelectTrigger className="rounded-xl">
+                              <SelectTrigger id="period-filter" className="rounded-xl">
                                 <SelectValue placeholder="Período" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1614,9 +1623,10 @@ export default function Dashboard() {
                     </CardHeader>
                     <CardContent className="px-6 pb-8 bg-white space-y-6">
                       <div className="space-y-2">
-                        <Label className="font-semibold">Saldo Inicial do Mês (R$)</Label>
+                        <Label htmlFor="initial-balance-input" className="font-semibold">Saldo Inicial do Mês (R$)</Label>
                         <div className="flex gap-3">
                           <Input 
+                            id="initial-balance-input"
                             type="number" 
                             className="rounded-xl h-12" 
                             value={initialBalance}
@@ -1792,8 +1802,9 @@ export default function Dashboard() {
                   <CardContent className="px-6 pb-8 bg-white space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className="text-xs font-bold uppercase text-gray-400">Data Inicial</Label>
+                        <Label htmlFor="report-start-date" className="text-xs font-bold uppercase text-gray-400">Data Inicial</Label>
                         <Input 
+                          id="report-start-date"
                           type="date" 
                           className="rounded-xl h-12" 
                           value={reportStartDate}
@@ -1801,8 +1812,9 @@ export default function Dashboard() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label className="text-xs font-bold uppercase text-gray-400">Data Final</Label>
+                        <Label htmlFor="report-end-date" className="text-xs font-bold uppercase text-gray-400">Data Final</Label>
                         <Input 
+                          id="report-end-date"
                           type="date" 
                           className="rounded-xl h-12" 
                           value={reportEndDate}
@@ -2132,9 +2144,9 @@ export default function Dashboard() {
               )}
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="userRole" className="font-semibold">Função / Nível de Acesso</Label>
+              <Label htmlFor="user-role-select" className="font-semibold">Função / Nível de Acesso</Label>
               <Select value={newUser.role} onValueChange={(v) => v && setNewUser({...newUser, role: v})}>
-                <SelectTrigger className="rounded-xl h-12">
+                <SelectTrigger id="user-role-select" className="rounded-xl h-12">
                   <SelectValue placeholder="Selecione a função" />
                 </SelectTrigger>
                 <SelectContent>

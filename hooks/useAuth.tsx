@@ -34,6 +34,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<{ uid: string; email: string } | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const profileRef = React.useRef<UserProfile | null>(null);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   useEffect(() => {
     const isAdminEmail = (email: string) => {
@@ -43,6 +48,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const syncProfile = async (u: { id: string; email?: string }) => {
       if (!u.email) return;
+
+      // Se já temos o perfil carregado e o UID bate, não precisamos buscar de novo
+      if (profileRef.current?.uid === u.id) return;
       
       const { data: profileData } = await supabase
         .from('user_profiles')
