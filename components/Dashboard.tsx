@@ -315,9 +315,9 @@ export default function Dashboard() {
     toast.success("Recibo gerado com sucesso!");
   };
 
-  const fetchInitialData = React.useCallback(async () => {
+  const fetchInitialData = React.useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
 
       // Fetch Configs
       const { data: configs } = await supabase.from('app_configs').select('*');
@@ -348,8 +348,10 @@ export default function Dashboard() {
 
       // Fetch Users - Admin list fetch might be restricted by RLS or we might want more data
       // For now we use the client-side fetch, but we'll try to use the API if it's an admin
-      if (profile?.role === 'ADMIN') {
-        const response = await fetch(`/api/admin/users?adminUid=${profile.uid}`);
+      if (profile?.role === 'ADMIN' && profile?.uid) {
+        const response = await fetch(`/api/admin/users?adminUid=${profile.uid}`, {
+          cache: 'no-store'
+        });
         if (response.ok) {
           const dbUsers = await response.json();
           setUsers(dbUsers);
@@ -365,27 +367,27 @@ export default function Dashboard() {
 
     } catch (error: any) {
       console.error('Error fetching data:', error);
-      toast.error(`Erro ao carregar dados: ${error.message || 'Erro desconhecido'}`);
+      if (!silent) toast.error(`Erro ao carregar dados: ${error.message || 'Erro desconhecido'}`);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [profile?.role, profile?.uid]);
 
   useEffect(() => {
     fetchInitialData();
 
-    // Real-time subscription
+    // Real-time subscription - Use silent updates for real-time to avoid freezing UI
     const channel = supabase
       .channel('schema-db-changes')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'transactions' },
-        () => fetchInitialData()
+        () => fetchInitialData(true)
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'app_configs' },
-        () => fetchInitialData()
+        () => fetchInitialData(true)
       )
       .subscribe();
 

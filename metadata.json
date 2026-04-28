@@ -1,6 +1,6 @@
 {
   "name": "Controle de Caixinha Fábrica",
-  "description": "Sistema simples e funcional para controle de dinheiro físico, prestação de contas e relatórios mensais da fábrica.",
+  "description": "Sistema robusto e otimizado para controle de dinheiro físico, prestação de contas, gestão de colaboradores e relatórios mensais da fábrica.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
