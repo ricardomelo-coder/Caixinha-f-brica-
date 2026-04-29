@@ -382,13 +382,23 @@ export default function Dashboard() {
   }, []); // Dependências vazias para estabilizar. Usaremos o profile via Ref ou passaremos via argumento se necessário.
 
   const profileRef = React.useRef(profile);
+  const hasFetchedRef = React.useRef(false);
+
   useEffect(() => {
     profileRef.current = profile;
-    // Se o perfil acabou de carregar pela primeira vez, forçamos um fetch
-    if (profile?.uid && transactions.length === 0) {
+    // Se o perfil carregou e ainda não buscamos dados, ou se mudou de usuário
+    if (profile?.uid && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
       fetchInitialData();
     }
-  }, [profile, transactions.length, fetchInitialData]);
+  }, [profile, fetchInitialData]);
+
+  useEffect(() => {
+    // Reset hasFetched se o usuário deslogar
+    if (!user) {
+      hasFetchedRef.current = false;
+    }
+  }, [user]);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
@@ -1696,7 +1706,7 @@ export default function Dashboard() {
                         Exportar Tabela Excel
                       </Button>
 
-                      {isAdmin && (
+                      {isFinanceiro && (
                         <>
                           <Button 
                             onClick={handleManualClosing}
@@ -1717,6 +1727,41 @@ export default function Dashboard() {
                             </Button>
                           )}
 
+                          <Dialog open={isReopenDialogOpen} onOpenChange={setIsReopenDialogOpen}>
+                            <DialogContent className="sm:max-w-[425px] rounded-3xl">
+                              <DialogHeader>
+                                <DialogTitle className="text-xl font-bold text-blue-600 flex items-center gap-2">
+                                  <RefreshCcw className="w-6 h-6" />
+                                  Reabrir Mês Atual
+                                </DialogTitle>
+                                <DialogDescription className="text-gray-500 pt-2">
+                                  Esta função deve ser usada <strong>apenas em caso de erro no fechamento</strong>.
+                                  <br /><br />
+                                  Ao reabrir, todas as movimentações consolidadas voltarão a ficar &quot;em aberto&quot;. O sistema deixará de considerar o saldo transportado e voltará a calcular o saldo atual dinamicamente.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="flex flex-col gap-3 mt-6">
+                                <Button 
+                                  className="h-12 rounded-xl font-bold bg-blue-600 hover:bg-blue-700"
+                                  onClick={handleReopenMonth}
+                                >
+                                  Confirmar Reabertura
+                                </Button>
+                                <Button 
+                                  variant="ghost"
+                                  className="h-12 rounded-xl font-bold"
+                                  onClick={() => setIsReopenDialogOpen(false)}
+                                >
+                                  Voltar
+                                </Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </>
+                      )}
+
+                      {isAdmin && (
+                        <>
                           <Button 
                             onClick={() => setIsResetDialogOpen(true)}
                             variant="ghost"
@@ -1753,37 +1798,6 @@ export default function Dashboard() {
                                   onClick={() => setIsResetDialogOpen(false)}
                                 >
                                   Cancelar
-                                </Button>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
-
-                          <Dialog open={isReopenDialogOpen} onOpenChange={setIsReopenDialogOpen}>
-                            <DialogContent className="sm:max-w-[425px] rounded-3xl">
-                              <DialogHeader>
-                                <DialogTitle className="text-xl font-bold text-blue-600 flex items-center gap-2">
-                                  <RefreshCcw className="w-6 h-6" />
-                                  Reabrir Mês Atual
-                                </DialogTitle>
-                                <DialogDescription className="text-gray-500 pt-2">
-                                  Esta função deve ser usada <strong>apenas em caso de erro no fechamento</strong>.
-                                  <br /><br />
-                                  Ao reabrir, todas as movimentações consolidadas voltarão a ficar &quot;em aberto&quot;. O sistema deixará de considerar o saldo transportado e voltará a calcular o saldo atual dinamicamente.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <div className="flex flex-col gap-3 mt-6">
-                                <Button 
-                                  className="h-12 rounded-xl font-bold bg-blue-600 hover:bg-blue-700"
-                                  onClick={handleReopenMonth}
-                                >
-                                  Confirmar Reabertura
-                                </Button>
-                                <Button 
-                                  variant="ghost"
-                                  className="h-12 rounded-xl font-bold"
-                                  onClick={() => setIsReopenDialogOpen(false)}
-                                >
-                                  Voltar
                                 </Button>
                               </div>
                             </DialogContent>
