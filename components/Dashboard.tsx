@@ -116,7 +116,9 @@ export default function Dashboard() {
     amount: '',
     responsible: '',
     description: '',
-    requiresSettlement: true
+    requiresSettlement: true,
+    payment_method: 'DINHEIRO' as 'DINHEIRO' | 'PIX',
+    beneficiary: ''
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string | null>('ALL');
@@ -155,10 +157,20 @@ export default function Dashboard() {
 
     // Summary Data for historical/period reports might need separate calculation if we want accurate balances for that period
     // But for now, let's keep the current summary or a simplified one for period reports
+    // Totals by origin for the report period
+    const tInPix = targetTransactions.filter(t => t.type === 'ENTRADA' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0);
+    const tInCash = targetTransactions.filter(t => t.type === 'ENTRADA' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0);
+    const tOutPix = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0));
+    const tOutCash = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0));
+
     const summaryData = [
       { "Resumo Financeiro": "Saldo Inicial", "Valor": `R$ ${initialBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
       { "Resumo Financeiro": "Total de Entradas", "Valor": `R$ ${totalIn.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
+      { "Resumo Financeiro": "  - Entradas em Pix", "Valor": `R$ ${tInPix.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
+      { "Resumo Financeiro": "  - Entradas em Dinheiro", "Valor": `R$ ${tInCash.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
       { "Resumo Financeiro": "Total de Saídas", "Valor": `R$ ${totalOut.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
+      { "Resumo Financeiro": "  - Saídas em Pix", "Valor": `R$ ${tOutPix.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
+      { "Resumo Financeiro": "  - Saídas em Dinheiro", "Valor": `R$ ${tOutCash.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
       { "Resumo Financeiro": "Devoluções ao Caixa", "Valor": `R$ ${totalReturned.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
       { "Resumo Financeiro": "Reembolsos Pagos", "Valor": `R$ ${totalRefunded.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
       { "Resumo Financeiro": "Resultado Líquido", "Valor": `R$ ${(totalIn - totalOut).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
@@ -169,6 +181,8 @@ export default function Dashboard() {
     const data = targetTransactions.map(tx => ({
       Data: tx.date,
       Responsável: tx.responsible,
+      Origem: tx.payment_method || 'DINHEIRO',
+      Beneficiário: tx.beneficiary || '-',
       Descrição: tx.description,
       Tipo: tx.type === 'ENTRADA' ? 'Entrada' : 'Saída',
       Valor: `R$ ${Math.abs(tx.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
@@ -219,6 +233,12 @@ export default function Dashboard() {
     doc.setFontSize(11);
     doc.setTextColor(100);
     doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 30);
+    
+    // Totals by origin for the report period
+    const tInPix = targetTransactions.filter(t => t.type === 'ENTRADA' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0);
+    const tInCash = targetTransactions.filter(t => t.type === 'ENTRADA' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0);
+    const tOutPix = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0));
+    const tOutCash = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0));
 
     // Summary Table
     autoTable(doc, {
@@ -227,7 +247,11 @@ export default function Dashboard() {
       body: [
         ['Saldo Inicial', `R$ ${initialBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
         ['Total de Entradas', `R$ ${totalIn.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['   - Entradas em Pix', `R$ ${tInPix.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['   - Entradas em Dinheiro', `R$ ${tInCash.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
         ['Total de Saídas', `R$ ${totalOut.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['   - Saídas em Pix', `R$ ${tOutPix.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
+        ['   - Saídas em Dinheiro', `R$ ${tOutCash.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
         ['Devoluções ao Caixa', `R$ ${totalReturned.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
         ['Reembolsos Pagos', `R$ ${totalRefunded.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
         ['Resultado Líquido', `R$ ${(totalIn - totalOut).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`],
@@ -241,6 +265,7 @@ export default function Dashboard() {
     const tableData = targetTransactions.map(tx => [
       tx.date,
       tx.responsible,
+      `${tx.payment_method || 'DINHEIRO'}${tx.payment_method === 'PIX' ? '\n(' + (tx.beneficiary || '-') + ')' : ''}`,
       tx.description,
       tx.type === 'ENTRADA' ? 'Entrada' : 'Saída',
       `R$ ${Math.abs(tx.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
@@ -253,7 +278,7 @@ export default function Dashboard() {
 
     autoTable(doc, {
       startY: (doc as any).lastAutoTable.finalY + 20,
-      head: [['Data', 'Responsável', 'Descrição', 'Tipo', 'Valor', 'Status']],
+      head: [['Data', 'Responsável', 'Origem', 'Descrição', 'Tipo', 'Valor', 'Status']],
       body: tableData,
       theme: 'striped',
       headStyles: { fillColor: [26, 26, 26] },
@@ -450,6 +475,8 @@ export default function Dashboard() {
             amount: newTx.type === 'ENTRADA' ? amount : -amount,
             type: newTx.type,
             status: newTx.type === 'ENTRADA' ? 'COMPLETED' : (newTx.requiresSettlement ? 'AWAITING_SETTLEMENT' : 'COMPLETED'),
+            payment_method: newTx.payment_method,
+            beneficiary: newTx.payment_method === 'PIX' ? newTx.beneficiary : null,
             updated_at: new Date().toISOString()
           })
           .eq('id', editingId);
@@ -467,6 +494,8 @@ export default function Dashboard() {
             date: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase(),
             timestamp: new Date().toISOString(),
             status: newTx.type === 'ENTRADA' ? 'COMPLETED' : (newTx.requiresSettlement ? 'AWAITING_SETTLEMENT' : 'COMPLETED'),
+            payment_method: newTx.payment_method,
+            beneficiary: newTx.payment_method === 'PIX' ? newTx.beneficiary : null,
             created_by: profile?.uid
           }]);
 
@@ -482,7 +511,7 @@ export default function Dashboard() {
     setIsDialogOpen(false);
     setIsEditing(false);
     setEditingId(null);
-    setNewTx({ type: 'SAIDA', amount: '', responsible: '', description: '', requiresSettlement: true });
+    setNewTx({ type: 'SAIDA', amount: '', responsible: '', description: '', requiresSettlement: true, payment_method: 'DINHEIRO', beneficiary: '' });
   };
 
   const handleEditTransaction = (tx: any) => {
@@ -493,7 +522,9 @@ export default function Dashboard() {
       amount: Math.abs(tx.amount).toString(),
       responsible: tx.responsible,
       description: tx.description,
-      requiresSettlement: tx.status === 'AWAITING_SETTLEMENT'
+      requiresSettlement: tx.status === 'AWAITING_SETTLEMENT',
+      payment_method: tx.payment_method || 'DINHEIRO',
+      beneficiary: tx.beneficiary || ''
     });
     setIsDialogOpen(true);
   };
@@ -1008,7 +1039,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-8">
           <div className="text-right">
             <p className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Saldo Atual</p>
-            <p className="text-2xl font-bold text-[#22C55E]">R$ {balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            <p className={`text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-[#22C55E]'}`}>R$ {balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
           </div>
           
           <div className="flex items-center gap-3">
@@ -1040,6 +1071,30 @@ export default function Dashboard() {
                         </SelectContent>
                       </Select>
                     </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="origin" className="font-semibold">Origem</Label>
+                      <Select value={newTx.payment_method} onValueChange={(v) => setNewTx({...newTx, payment_method: v as any})}>
+                        <SelectTrigger id="origin" className="rounded-xl h-12">
+                          <SelectValue placeholder="Selecione a origem" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="DINHEIRO">Dinheiro</SelectItem>
+                          <SelectItem value="PIX">Pix</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {newTx.payment_method === 'PIX' && (
+                      <div className="grid gap-2">
+                        <Label htmlFor="beneficiary" className="font-semibold">Beneficiário</Label>
+                        <Input 
+                          id="beneficiary" 
+                          placeholder="Nome do beneficiário" 
+                          className="rounded-xl h-12"
+                          value={newTx.beneficiary}
+                          onChange={(e) => setNewTx({...newTx, beneficiary: e.target.value})}
+                        />
+                      </div>
+                    )}
                     <div className="grid gap-2">
                       <Label htmlFor="amount" className="font-semibold">Valor (R$)</Label>
                       <Input 
@@ -1089,7 +1144,7 @@ export default function Dashboard() {
                       setIsDialogOpen(false);
                       setIsEditing(false);
                       setEditingId(null);
-                      setNewTx({ type: 'SAIDA', amount: '', responsible: '', description: '', requiresSettlement: true });
+                      setNewTx({ type: 'SAIDA', amount: '', responsible: '', description: '', requiresSettlement: true, payment_method: 'DINHEIRO', beneficiary: '' });
                     }} className="rounded-xl h-12 px-6">Cancelar</Button>
                     <Button onClick={handleCreateTransaction} className="bg-[#1A1A1A] hover:bg-black text-white rounded-xl h-12 px-8 font-semibold">
                       {isEditing ? 'Salvar Alterações' : 'Confirmar Lançamento'}
@@ -1517,6 +1572,7 @@ export default function Dashboard() {
                       <tr className="bg-gray-50 border-y border-gray-100">
                         <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-500">Data</th>
                         <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-500">Responsável</th>
+                        <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-500">Origem</th>
                         <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-500">Descrição</th>
                         <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-500">Tipo</th>
                         <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-widest text-gray-500">Status</th>
@@ -1528,6 +1584,16 @@ export default function Dashboard() {
                         <tr key={tx.id} className="hover:bg-gray-50 transition-colors cursor-pointer group" onClick={() => (tx.status === 'AWAITING_SETTLEMENT' || tx.status === 'AWAITING_REIMBURSEMENT') && handleSettlement(tx.id)}>
                           <td className="px-6 py-4 text-sm font-medium text-gray-600">{tx.date}</td>
                           <td className="px-6 py-4 text-sm font-bold">{tx.responsible}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded w-fit ${tx.payment_method === 'PIX' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>
+                                {tx.payment_method || 'DINHEIRO'}
+                              </span>
+                              {tx.payment_method === 'PIX' && tx.beneficiary && (
+                                <span className="text-[10px] text-gray-400 truncate max-w-[100px]">{tx.beneficiary}</span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-6 py-4 text-sm text-gray-500">{tx.description}</td>
                           <td className="px-6 py-4">
                             <Badge variant="outline" className={tx.type === 'ENTRADA' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}>
@@ -1872,7 +1938,7 @@ export default function Dashboard() {
                       </div>
                       <div className="space-y-1">
                         <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Saldo Atual (Consolidado)</p>
-                        <p className="text-2xl font-bold text-[#22C55E]">R$ {balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        <p className={`text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-[#22C55E]'}`}>R$ {balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                       </div>
                     </div>
 
@@ -2273,7 +2339,7 @@ function StatCard({ title, value, icon, color, onClick }: { title: string, value
   );
 }
 
-function TransactionItem({ id, responsible, description, amount, type, date, status, closed, onSettlement, onDelete, onEdit, onPrint, isAdmin }: any) {
+function TransactionItem({ id, responsible, description, amount, type, date, status, closed, onSettlement, onDelete, onEdit, onPrint, isAdmin, payment_method, beneficiary }: any) {
   const isPositive = type === 'ENTRADA';
   const isPending = status === 'AWAITING_SETTLEMENT' || status === 'AWAITING_REIMBURSEMENT';
   
@@ -2303,7 +2369,14 @@ function TransactionItem({ id, responsible, description, amount, type, date, sta
               <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-[10px] font-bold">REEMBOLSO PENDENTE</Badge>
             )}
           </div>
-          <p className="text-xs text-gray-500 line-clamp-1">{description}</p>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className={`text-[9px] font-black h-4 px-1 ${payment_method === 'PIX' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
+              {payment_method || 'DINHEIRO'}
+            </Badge>
+            <p className="text-xs text-gray-500 line-clamp-1">
+              {payment_method === 'PIX' && beneficiary ? `${beneficiary} - ` : ''}{description}
+            </p>
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-4">

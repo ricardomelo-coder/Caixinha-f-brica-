@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   status TEXT NOT NULL,
   closed BOOLEAN DEFAULT FALSE,
+  payment_method TEXT DEFAULT 'DINHEIRO',
+  beneficiary TEXT,
   reimbursement_amount NUMERIC DEFAULT 0,
   created_by TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
