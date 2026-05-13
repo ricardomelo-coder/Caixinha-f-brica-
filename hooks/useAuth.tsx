@@ -47,65 +47,89 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const syncProfile = async (u: { id: string; email?: string }) => {
-      if (!u.email) return;
+      try {
+        if (!u.email) return;
 
-      // Se já temos o perfil carregado e o UID bate, não precisamos buscar de novo
-      if (profileRef.current?.uid === u.id) return;
-      
-      const { data: profileData } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('uid', u.id)
-        .single();
+        // Se já temos o perfil carregado e o UID bate, não precisamos buscar de novo
+        if (profileRef.current?.uid === u.id) return;
         
-      const shouldBeAdmin = isAdminEmail(u.email);
-      const targetRole = shouldBeAdmin ? 'ADMIN' : 'FINANCEIRO';
-
-      if (profileData) {
-        if (shouldBeAdmin && profileData.role !== 'ADMIN') {
-          await supabase
-            .from('user_profiles')
-            .update({ role: 'ADMIN' })
-            .eq('uid', u.id);
+        const { data: profileData, error: fetchError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('uid', u.id)
+          .single();
           
-          setProfile(prev => prev?.role === 'ADMIN' ? prev : { ...profileData, role: 'ADMIN' });
+        const shouldBeAdmin = isAdminEmail(u.email);
+        const targetRole = shouldBeAdmin ? 'ADMIN' : 'FINANCEIRO';
+
+        if (profileData) {
+          if (shouldBeAdmin && profileData.role !== 'ADMIN') {
+            await supabase
+              .from('user_profiles')
+              .update({ role: 'ADMIN' })
+              .eq('uid', u.id);
+            
+            setProfile(prev => prev?.role === 'ADMIN' ? prev : { ...profileData, role: 'ADMIN' });
+          } else {
+            setProfile(prev => {
+              if (prev?.uid === profileData.uid && prev?.role === profileData.role) return prev;
+              return {
+                uid: profileData.uid,
+                email: profileData.email,
+                name: profileData.name,
+                role: profileData.role
+              };
+            });
+          }
         } else {
-          setProfile(prev => {
-            if (prev?.uid === profileData.uid && prev?.role === profileData.role) return prev;
-            return {
-              uid: profileData.uid,
-              email: profileData.email,
-              name: profileData.name,
-              role: profileData.role
-            };
-          });
+          // Se não encontrou o perfil, cria um novo
+          const newProfile: UserProfile = {
+            uid: u.id,
+            email: u.email.toLowerCase(),
+            name: u.email.split('@')[0] || 'Usuário',
+            role: targetRole as any
+          };
+          
+          const { error: upsertError } = await supabase.from('user_profiles').upsert([newProfile]);
+          if (upsertError) throw upsertError;
+          setProfile(newProfile);
         }
-      } else {
-        const newProfile: UserProfile = {
-          uid: u.id,
-          email: u.email.toLowerCase(),
-          name: u.email.split('@')[0] || 'Usuário',
-          role: targetRole as any
-        };
-        
-        await supabase.from('user_profiles').upsert([newProfile]);
-        setProfile(newProfile);
+      } catch (err) {
+        console.error('Erro ao sincronizar perfil:', err);
       }
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
-        const u = session.user;
-        setUser(prev => prev?.uid === u.id ? prev : { uid: u.id, email: u.email || '' });
-        await syncProfile(u);
-      } else if (event === 'SIGNED_OUT' || !session) {
-        setUser(null);
-        setProfile(null);
+      try {
+        if (session) {
+          const u = session.user;
+          setUser(prev => prev?.uid === u.id ? prev : { uid: u.id, email: u.email || '' });
+          await syncProfile(u);
+        } else if (event === 'SIGNED_OUT' || !session) {
+          setUser(null);
+          setProfile(null);
+        }
+      } catch (err) {
+        console.error('Erro no onAuthStateChange:', err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    // Safety timeout: se em 10 segundos não carregou, tentamos liberar a tela
+    const timeout = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) {
+          console.warn('Carregamento de autenticação demorou demais. Liberando tela por segurança.');
+        }
+        return false;
+      });
+    }, 10000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const login = async (email: string, pass: string) => {

@@ -112,11 +112,12 @@ export default function Dashboard() {
     attachments: [] as string[]
   });
   const [newTx, setNewTx] = useState({
-    type: 'SAIDA',
+    type: 'SAIDA' as 'ENTRADA' | 'SAIDA',
     amount: '',
     responsible: '',
     description: '',
     requiresSettlement: true,
+    isReimbursement: false,
     payment_method: 'DINHEIRO' as 'DINHEIRO' | 'PIX',
     beneficiary: ''
   });
@@ -160,8 +161,8 @@ export default function Dashboard() {
     // Totals by origin for the report period
     const tInPix = targetTransactions.filter(t => t.type === 'ENTRADA' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0);
     const tInCash = targetTransactions.filter(t => t.type === 'ENTRADA' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0);
-    const tOutPix = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0));
-    const tOutCash = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0));
+    const tOutPix = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.status !== 'AWAITING_REIMBURSEMENT' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0));
+    const tOutCash = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.status !== 'AWAITING_REIMBURSEMENT' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0));
 
     const summaryData = [
       { "Resumo Financeiro": "Saldo Inicial", "Valor": `R$ ${initialBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
@@ -237,8 +238,8 @@ export default function Dashboard() {
     // Totals by origin for the report period
     const tInPix = targetTransactions.filter(t => t.type === 'ENTRADA' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0);
     const tInCash = targetTransactions.filter(t => t.type === 'ENTRADA' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0);
-    const tOutPix = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0));
-    const tOutCash = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0));
+    const tOutPix = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.status !== 'AWAITING_REIMBURSEMENT' && t.payment_method === 'PIX').reduce((acc, t) => acc + t.amount, 0));
+    const tOutCash = Math.abs(targetTransactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.status !== 'AWAITING_REIMBURSEMENT' && (t.payment_method === 'DINHEIRO' || !t.payment_method)).reduce((acc, t) => acc + t.amount, 0));
 
     // Summary Table
     autoTable(doc, {
@@ -464,6 +465,14 @@ export default function Dashboard() {
     }
 
     const amount = parseFloat(newTx.amount);
+    let status = 'COMPLETED';
+    if (newTx.type === 'SAIDA') {
+      if (newTx.isReimbursement) {
+        status = 'AWAITING_REIMBURSEMENT';
+      } else if (newTx.requiresSettlement) {
+        status = 'AWAITING_SETTLEMENT';
+      }
+    }
 
     try {
       if (isEditing && editingId) {
@@ -474,7 +483,8 @@ export default function Dashboard() {
             description: newTx.description,
             amount: newTx.type === 'ENTRADA' ? amount : -amount,
             type: newTx.type,
-            status: newTx.type === 'ENTRADA' ? 'COMPLETED' : (newTx.requiresSettlement ? 'AWAITING_SETTLEMENT' : 'COMPLETED'),
+            status,
+            reimbursement_amount: newTx.isReimbursement ? amount : 0,
             payment_method: newTx.payment_method,
             beneficiary: newTx.payment_method === 'PIX' ? newTx.beneficiary : null,
             updated_at: new Date().toISOString()
@@ -493,7 +503,8 @@ export default function Dashboard() {
             type: newTx.type,
             date: new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase(),
             timestamp: new Date().toISOString(),
-            status: newTx.type === 'ENTRADA' ? 'COMPLETED' : (newTx.requiresSettlement ? 'AWAITING_SETTLEMENT' : 'COMPLETED'),
+            status,
+            reimbursement_amount: newTx.isReimbursement ? amount : 0,
             payment_method: newTx.payment_method,
             beneficiary: newTx.payment_method === 'PIX' ? newTx.beneficiary : null,
             created_by: profile?.uid
@@ -511,7 +522,7 @@ export default function Dashboard() {
     setIsDialogOpen(false);
     setIsEditing(false);
     setEditingId(null);
-    setNewTx({ type: 'SAIDA', amount: '', responsible: '', description: '', requiresSettlement: true, payment_method: 'DINHEIRO', beneficiary: '' });
+    setNewTx({ type: 'SAIDA', amount: '', responsible: '', description: '', requiresSettlement: true, isReimbursement: false, payment_method: 'DINHEIRO', beneficiary: '' });
   };
 
   const handleEditTransaction = (tx: any) => {
@@ -523,6 +534,7 @@ export default function Dashboard() {
       responsible: tx.responsible,
       description: tx.description,
       requiresSettlement: tx.status === 'AWAITING_SETTLEMENT',
+      isReimbursement: tx.status === 'AWAITING_REIMBURSEMENT',
       payment_method: tx.payment_method || 'DINHEIRO',
       beneficiary: tx.beneficiary || ''
     });
@@ -846,7 +858,7 @@ export default function Dashboard() {
   };
 
   const totalIn = transactions.filter(t => t.type === 'ENTRADA' && !t.closed).reduce((acc, t) => acc + t.amount, 0);
-  const totalOut = Math.abs(transactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && !t.closed).reduce((acc, t) => acc + t.amount, 0));
+  const totalOut = Math.abs(transactions.filter(t => t.type === 'SAIDA' && t.status !== 'CANCELLED' && t.status !== 'AWAITING_REIMBURSEMENT' && !t.closed).reduce((acc, t) => acc + t.amount, 0));
   
   const totalReturned = transactions
     .filter(t => !t.closed && t.type === 'ENTRADA' && t.description.startsWith('Devolução'))
@@ -873,7 +885,7 @@ export default function Dashboard() {
 
   const totalOutMonth = Math.abs(transactions
     .filter(t => {
-      if (t.type !== 'SAIDA' || t.status === 'CANCELLED' || t.closed) return false;
+      if (t.type !== 'SAIDA' || t.status === 'CANCELLED' || t.status === 'AWAITING_REIMBURSEMENT' || t.closed) return false;
       if (!t.timestamp) return false;
       const d = new Date(t.timestamp);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
@@ -1127,15 +1139,51 @@ export default function Dashboard() {
                       />
                     </div>
                     {newTx.type === 'SAIDA' && (
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="checkbox" 
-                          id="settlement" 
-                          checked={newTx.requiresSettlement}
-                          onChange={(e) => setNewTx({...newTx, requiresSettlement: e.target.checked})}
-                          className="w-4 h-4 rounded border-gray-300 text-[#1A1A1A] focus:ring-[#1A1A1A]"
-                        />
-                        <Label htmlFor="settlement" className="text-sm font-medium">Requer prestação de contas</Label>
+                      <div className="grid gap-2">
+                        <Label className="font-semibold mb-1">Categoria da Saída</Label>
+                        <div className="space-y-3 bg-gray-50/50 p-4 rounded-2xl border border-gray-100">
+                          <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => setNewTx({...newTx, isReimbursement: false, requiresSettlement: false})}>
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${!newTx.isReimbursement && !newTx.requiresSettlement ? 'bg-black border-black' : 'bg-white border-gray-300 group-hover:border-gray-400'}`}>
+                              {!newTx.isReimbursement && !newTx.requiresSettlement && (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="flex flex-col">
+                              <span className={`text-sm leading-tight font-bold transition-colors ${!newTx.isReimbursement && !newTx.requiresSettlement ? 'text-black' : 'text-gray-500'}`}>Saída Direta</span>
+                              <span className="text-[10px] text-gray-400">Afeta o saldo do caixa imediatamente.</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => setNewTx({...newTx, isReimbursement: false, requiresSettlement: true})}>
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${!newTx.isReimbursement && newTx.requiresSettlement ? 'bg-black border-black' : 'bg-white border-gray-300 group-hover:border-gray-400'}`}>
+                              {!newTx.isReimbursement && newTx.requiresSettlement && (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="flex flex-col">
+                              <span className={`text-sm leading-tight font-bold transition-colors ${!newTx.isReimbursement && newTx.requiresSettlement ? 'text-black' : 'text-gray-500'}`}>Adiantamento</span>
+                              <span className="text-[10px] text-gray-400">Afeta saldo + exige futura prestação de contas.</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => setNewTx({...newTx, isReimbursement: true, requiresSettlement: false})}>
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-all ${newTx.isReimbursement ? 'bg-black border-black' : 'bg-white border-gray-300 group-hover:border-gray-400'}`}>
+                              {newTx.isReimbursement && (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="flex flex-col">
+                              <span className={`text-sm leading-tight font-bold transition-colors ${newTx.isReimbursement ? 'text-black' : 'text-gray-500'}`}>Solicitação de Reembolso</span>
+                              <span className="text-[10px] text-gray-400">Não afeta o saldo agora. Aguarda pagamento futuro.</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
