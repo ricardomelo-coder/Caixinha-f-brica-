@@ -419,6 +419,17 @@ export default function Dashboard() {
     }
   }, [profile, fetchInitialData]);
 
+  // Safety loading timeout for Dashboard
+  useEffect(() => {
+    if (loading) {
+      const timeout = setTimeout(() => {
+        setLoading(false);
+        console.warn('Dashboard loading timeout triggered');
+      }, 7000);
+      return () => clearTimeout(timeout);
+    }
+  }, [loading]);
+
   useEffect(() => {
     // Reset hasFetched se o usuário deslogar
     if (!user) {
@@ -1192,7 +1203,7 @@ export default function Dashboard() {
                       setIsDialogOpen(false);
                       setIsEditing(false);
                       setEditingId(null);
-                      setNewTx({ type: 'SAIDA', amount: '', responsible: '', description: '', requiresSettlement: true, payment_method: 'DINHEIRO', beneficiary: '' });
+                      setNewTx({ type: 'SAIDA', amount: '', responsible: '', description: '', requiresSettlement: true, isReimbursement: false, payment_method: 'DINHEIRO', beneficiary: '' });
                     }} className="rounded-xl h-12 px-6">Cancelar</Button>
                     <Button onClick={handleCreateTransaction} className="bg-[#1A1A1A] hover:bg-black text-white rounded-xl h-12 px-8 font-semibold">
                       {isEditing ? 'Salvar Alterações' : 'Confirmar Lançamento'}
