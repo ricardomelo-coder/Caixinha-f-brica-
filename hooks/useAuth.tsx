@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 interface UserProfile {
   uid: string;
   email: string;
   name: string;
-  role: 'ADMIN' | 'FINANCEIRO';
+  role: "ADMIN" | "FINANCEIRO";
 }
 
 interface AuthContextType {
@@ -30,157 +30,225 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
 });
 
+const isAdminEmail = (email: string) => {
+  const normalizedEmail = email.toLowerCase();
+
+  return (
+    normalizedEmail === "ricardomelo@browne.com.br" ||
+    normalizedEmail === "ricardomelo@charquesuprema.com.br"
+  );
+};
+
+const buildFallbackProfile = (uid: string, email: string): UserProfile => {
+  const normalizedEmail = email.toLowerCase();
+
+  return {
+    uid,
+    email: normalizedEmail,
+    name: normalizedEmail.split("@")[0] || "Usuário",
+    role: isAdminEmail(normalizedEmail) ? "ADMIN" : "FINANCEIRO",
+  };
+};
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<{ uid: string; email: string } | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const profileRef = React.useRef<UserProfile | null>(null);
 
-  useEffect(() => {
-    profileRef.current = profile;
-  }, [profile]);
+  const syncProfile = async (uid: string, email: string) => {
+    const fallbackProfile = buildFallbackProfile(uid, email);
 
-  useEffect(() => {
-    const isAdminEmail = (email: string) => {
-      const e = email.toLowerCase();
-      return e === 'ricardomelo@browne.com.br' || e === 'ricardomelo@charquesuprema.com.br';
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select("uid, email, name, role")
+      .eq("uid", uid)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Erro ao buscar perfil:", error);
+      setProfile(fallbackProfile);
+      return;
+    }
+
+    if (!data) {
+      const { error: insertError } = await supabase
+        .from("user_profiles")
+        .upsert([fallbackProfile], { onConflict: "uid" });
+
+      if (insertError) {
+        console.error("Erro ao criar perfil:", insertError);
+      }
+
+      setProfile(fallbackProfile);
+      return;
+    }
+
+    const shouldBeAdmin = isAdminEmail(email);
+    const correctedProfile: UserProfile = {
+      uid: data.uid,
+      email: data.email || fallbackProfile.email,
+      name: data.name || fallbackProfile.name,
+      role: shouldBeAdmin ? "ADMIN" : data.role,
     };
 
-    const syncProfile = async (u: { id: string; email?: string }) => {
+    if (shouldBeAdmin && data.role !== "ADMIN") {
+      const { error: updateError } = await supabase
+        .from("user_profiles")
+        .update({ role: "ADMIN" })
+        .eq("uid", uid);
+
+      if (updateError) {
+        console.error("Erro ao atualizar perfil para ADMIN:", updateError);
+      }
+    }
+
+    setProfile(correctedProfile);
+  };
+
+  const clearAuthState = () => {
+    setUser(null);
+    setProfile(null);
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadInitialSession = async () => {
+      setLoading(true);
+
       try {
-        if (!u.email) return;
+        const { data, error } = await supabase.auth.getSession();
 
-        // Se já temos o perfil carregado e o UID bate, não precisamos buscar de novo
-        if (profileRef.current?.uid === u.id) return;
-        
-        const { data: profileData, error: fetchError } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('uid', u.id)
-          .single();
-          
-        const shouldBeAdmin = isAdminEmail(u.email);
-        const targetRole = shouldBeAdmin ? 'ADMIN' : 'FINANCEIRO';
-
-        if (profileData) {
-          if (shouldBeAdmin && profileData.role !== 'ADMIN') {
-            await supabase
-              .from('user_profiles')
-              .update({ role: 'ADMIN' })
-              .eq('uid', u.id);
-            
-            setProfile(prev => prev?.role === 'ADMIN' ? prev : { ...profileData, role: 'ADMIN' });
-          } else {
-            setProfile(prev => {
-              if (prev?.uid === profileData.uid && prev?.role === profileData.role) return prev;
-              return {
-                uid: profileData.uid,
-                email: profileData.email,
-                name: profileData.name,
-                role: profileData.role
-              };
-            });
-          }
-        } else {
-          // Se não encontrou o perfil, cria um novo
-          const newProfile: UserProfile = {
-            uid: u.id,
-            email: u.email.toLowerCase(),
-            name: u.email.split('@')[0] || 'Usuário',
-            role: targetRole as any
-          };
-          
-          const { error: upsertError } = await supabase.from('user_profiles').upsert([newProfile]);
-          if (upsertError) throw upsertError;
-          setProfile(newProfile);
+        if (error) {
+          console.error("Erro ao carregar sessão:", error);
+          await supabase.auth.signOut();
+          if (isMounted) clearAuthState();
+          return;
         }
+
+        const session = data.session;
+
+        if (!session?.user) {
+          if (isMounted) clearAuthState();
+          return;
+        }
+
+        const currentUser = session.user;
+        const email = currentUser.email || "";
+
+        if (!email) {
+          await supabase.auth.signOut();
+          if (isMounted) clearAuthState();
+          return;
+        }
+
+        if (isMounted) {
+          setUser({
+            uid: currentUser.id,
+            email,
+          });
+        }
+
+        await syncProfile(currentUser.id, email);
       } catch (err) {
-        console.error('Erro ao sincronizar perfil:', err);
+        console.error("Erro inesperado ao iniciar autenticação:", err);
+        await supabase.auth.signOut();
+        if (isMounted) clearAuthState();
+      } finally {
+        if (isMounted) setLoading(false);
       }
     };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    loadInitialSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+
       try {
-        if (session) {
-          const u = session.user;
-          setUser(prev => prev?.uid === u.id ? prev : { uid: u.id, email: u.email || '' });
-          await syncProfile(u);
-        } else if (event === 'SIGNED_OUT' || !session) {
-          setUser(null);
-          setProfile(null);
+        if (event === "SIGNED_OUT" || !session?.user) {
+          clearAuthState();
+          return;
         }
+
+        const currentUser = session.user;
+        const email = currentUser.email || "";
+
+        if (!email) {
+          await supabase.auth.signOut();
+          clearAuthState();
+          return;
+        }
+
+        setUser({
+          uid: currentUser.id,
+          email,
+        });
+
+        await syncProfile(currentUser.id, email);
       } catch (err) {
-        console.error('Erro no onAuthStateChange:', err);
+        console.error("Erro ao processar alteração de autenticação:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     });
 
-    // Safety timeout: se em 10 segundos não carregou, tentamos liberar a tela
-    const timeout = setTimeout(() => {
-      setLoading(prev => {
-        if (prev) {
-          console.warn('Carregamento de autenticação demorou demais. Liberando tela por segurança.');
-        }
-        return false;
-      });
-    }, 10000);
-
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
-      clearTimeout(timeout);
     };
   }, []);
 
   const login = async (email: string, pass: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password: pass,
-      });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: pass,
+    });
 
-      if (error) {
-        if (error.message.includes('Invalid login credentials')) {
-          throw new Error('Usuário não encontrado ou senha incorreta.');
-        }
-        throw error;
+    if (error) {
+      if (error.message.includes("Invalid login credentials")) {
+        throw new Error("Usuário não encontrado ou senha incorreta.");
       }
-    } catch (e: any) {
-      throw e;
+
+      throw error;
     }
   };
 
   const register = async (email: string, pass: string) => {
-    try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password: pass,
-      });
+    const { error } = await supabase.auth.signUp({
+      email,
+      password: pass,
+    });
 
-      if (error) throw error;
-      // O perfil será sincronizado pelo onAuthStateChange após o signup/login automático
-    } catch (e: any) {
-      throw e;
-    }
+    if (error) throw error;
   };
 
   const updatePassword = async (newPass: string) => {
-    try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPass
-      });
-      if (error) throw error;
-    } catch (e: any) {
-      throw e;
-    }
+    const { error } = await supabase.auth.updateUser({
+      password: newPass,
+    });
+
+    if (error) throw error;
   };
 
   const logout = async () => {
+    clearAuthState();
     await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, login, register, updatePassword, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        loading,
+        login,
+        register,
+        updatePassword,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
